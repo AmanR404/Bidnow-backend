@@ -25,12 +25,28 @@ app.post('/placebid', async (req, res) => {
         const { user, bid, product_name } = req.body
         const db = await connectDB()
 
+        await db.beginTransaction();
+        const [rows] = await db.execute(
+      `SELECT bid FROM biddings WHERE product_name = ? 
+       ORDER BY id DESC LIMIT 1 FOR UPDATE`,
+      [product_name]
+    );
+        const latestBid = rows[0]?.bid || 0;
+        if (bid > latestBid){
+            
         let [result] = await db.execute(`
     insert into biddings(name,bid,product_name) values(?,?,?)`, [user, bid, product_name]);
+        await db.commit();
 
         io.emit("bidPlaced", { user, bid, product_name })
         res.json({ success: true, insertId: result.insertId })
-        console.log("Inserted:", result);
+        }
+        else{
+            await db.rollback();
+             res.status(409).json({
+            error: "Bid rejected: another user already placed a higher bid."
+          });
+        }
     }
     catch(error){
         console.error("Error inserting Bid ", error)
